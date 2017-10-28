@@ -2272,16 +2272,21 @@ def figure_3(measure_dict, figures_dir, results_dir, data_dir, mpm='MT', covars_
     
     
     
-def figure_4(measure_dict, graph_dict, figures_dir, results_dir, mpm='MT', rich_club=False, covars_name='none'):
+def figure_4(nodal_measures_file, corrmat_file, figures_dir, results_dir, mpm='MT', rich_club=False, rc_file=None, covars_name='none'):
 
     # Set the seaborn context and style
     sns.set(style="white")
     sns.set_context("poster", font_scale=2)
 
+    # Load in nodal measures
+    import pandas as pd
+    nodal_measures = pd.read_csv(nodal_measures_file)
+    
     # Define the sub_dict
-    sub_dict = measure_dict['308']['COVARS_{}'.format(covars_name)]
-    sub_dict['Degree'] = measure_dict['308']['Graph_measures']['Degree_CT_ALL_COVARS_ONES_COST_10']
-    sub_dict['Closeness'] = measure_dict['308']['Graph_measures']['Closeness_CT_ALL_COVARS_ONES_COST_10']
+    # sub_dict = nodal_measures[covars_name]  this isn't working
+    sub_dict = {}
+    sub_dict['Degree'] = nodal_measures['Degree'.lower()]
+    sub_dict['Closeness'] = nodal_measures['Closeness'.lower()]
     
     # Get the set values
     min_max_dict = get_min_max_values(sub_dict)
@@ -2304,14 +2309,16 @@ def figure_4(measure_dict, graph_dict, figures_dir, results_dir, mpm='MT', rich_
         ax_list += [ax]    
         
     #======= ANATOMICAL NETWORKS ========================
-    G = graph_dict['CT_ALL_COVARS_ONES_COST_10']
-    G_02 = graph_dict['CT_ALL_COVARS_ONES_COST_02']
-    
+    M = np.loadtxt(corrmat_file)
+    import make_graphs as mkg
+    G_10 = mkg.graph_at_cost(M, 10)
+    G_02 = mkg.graph_at_cost(M, 2)
+     
     node_size_dict = { 'Degree' : 16*sub_dict['Degree'], 
                         'Closeness' : 1500*sub_dict['Closeness']  }
        
     if rich_club:
-        rich_edges, rich_nodes = rich_edges_nodes(G, thresh=85)
+        rich_edges, rich_nodes = rich_edges_nodes(G_10, thresh=85)
     else:
         rich_nodes = []
             
@@ -2320,13 +2327,12 @@ def figure_4(measure_dict, graph_dict, figures_dir, results_dir, mpm='MT', rich_
 
     for i, network_measure in enumerate([ 'Degree', 'Closeness' ]):
     
-        network_measure_key = '{}_CT_ALL_COVARS_ONES_COST_10'.format(network_measure)
+        network_measure_key = network_measure.lower()
         network_measure_min = min_max_dict['{}_CBAR_min'.format(network_measure)]
         network_measure_max = min_max_dict['{}_CBAR_max'.format(network_measure)]
         
-        ax_list[i] = plot_anatomical_network(G, 
-                                        measure_dict['308']['Graph_measures'], 
-                                        centroids=measure_dict['308']['centroids'],
+        ax_list[i] = plot_anatomical_network(G_10, 
+                                        nodal_measures_file,
                                         measure=network_measure_key, 
                                         orientation='sagittal', 
                                         cmap_name=cmap_dict[network_measure],
@@ -2334,18 +2340,17 @@ def figure_4(measure_dict, graph_dict, figures_dir, results_dir, mpm='MT', rich_
                                         vmax=network_measure_max,
                                         node_size_list=node_size_dict[network_measure], 
                                         rc_node_list=rich_nodes,
-                                        edge_list=[], 
+                                        edge_list=[],
                                         ax=ax_list[i],
                                         continuous=True)
                                         
         ax_list[i] = plot_anatomical_network(G_02, 
-                                                measure_dict['308']['Graph_measures'], 
-                                                centroids=measure_dict['308']['centroids'],
+                                                nodal_measures_file,
                                                 measure=network_measure_key, 
                                                 orientation='sagittal', 
                                                 node_list=[], 
                                                 edge_width=0.8,
-                                                ax=ax_list[i])
+                                                ax=ax_list[i])                                        
                                                 
         # Add a colorbar
         cb_grid = gridspec.GridSpec(1,1)
@@ -2395,67 +2400,7 @@ def figure_4(measure_dict, graph_dict, figures_dir, results_dir, mpm='MT', rich_
     y_label_right = axis_label_dict[network_measure_right]
     y_data_right = sub_dict[network_measure_right]
 
-    measure_list = [ 'CT_regional_corr_age_m',
-                     '{}_projfrac+030_regional_corr_age_m'.format(mpm),
-                     'PLS2' ]
-                     
-    for i, measure in enumerate(measure_list):
-
-        # Set the x and y data
-        x_data = sub_dict[measure]
-        
-        # Mask the network values if you're looking at PLS2
-        if measure == 'PLS2':
-            gene_indices = measure_dict['308']['gene_indices']
-            y_data_left = y_data_left[gene_indices]
-            y_data_right = y_data_right[gene_indices]
-        
-        # Get the appropriate min, max and label values
-        # for the y axis
-        measure_min = min_max_dict['{}_min'.format(measure)]
-        measure_max = min_max_dict['{}_max'.format(measure)]
-        x_label = axis_label_dict[measure]
-        
-        ax = ax_list_left[i]
-        ax_r = ax_list_right[i]
-        
-        # Set the color from the colormap above
-        left_cmap = plt.get_cmap(cmap_dict[network_measure_left])
-        left_color = left_cmap(0.75)
-        right_cmap = plt.get_cmap(cmap_dict[network_measure_right])
-        right_color = right_cmap(0.75)
-        
-        ax = pretty_scatter(x_data, 
-                                y_data_left, 
-                                x_label=x_label,
-                                y_label=y_label_left, 
-                                x_min=measure_min, x_max=measure_max,
-                                y_min=network_measure_left_min,y_max=network_measure_left_max, 
-                                color=left_color,
-                                marker_size=60,
-                                marker='o',
-                                ax=ax,
-                                figure=big_fig,
-                                y0_line=False)
-        
-        ax.yaxis.set_label_coords(-0.12, 0.5)
-        
-        ax_r = pretty_scatter(x_data, 
-                                y_data_right, 
-                                x_label=x_label,
-                                y_label=y_label_right, 
-                                x_min=measure_min, x_max=measure_max,
-                                y_min=network_measure_right_min,y_max=network_measure_right_max, 
-                                color=right_color,
-                                marker_size=70,
-                                marker='^',
-                                ax=ax_r,
-                                figure=big_fig,
-                                despine_right=False,
-                                y0_line=False)
-                                
-        ax_r.yaxis.set_label_coords(1.2, 0.5)
-                                        
+    
     #====== REMOVE AXIS LABELS ==================================
     for ax in ax_list_left[1:] + ax_list_right[:-1]:
         ax.yaxis.set_label_text('')
@@ -2512,10 +2457,7 @@ def figure_4(measure_dict, graph_dict, figures_dir, results_dir, mpm='MT', rich_
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
     filename = os.path.join(output_dir, 'Figure4.png')
-        
-    big_fig.savefig(filename, bbox_inches=0, dpi=100)
-    rescale(filename, suff='jpg')
-
+    plt.savefig(filename, bbox_inches='tight')
     plt.close()
 
     
@@ -3370,7 +3312,7 @@ def network_summary_fig(corrmat_file, NodalMeasures_file, GlobalMeasures_file, R
     network_measures_dict = pd.read_csv(GlobalMeasures_file)
     deg, rc, rc_rand = read_in_rich_club(RichClub_file)
     
-    node_size = pd.read_csv(NodalMeasures_file, usecols=['degree'], skipinitialspace=True)['degree'].tolist() #talk to kirstie about what the original *12 +5 did, and whether this should be a list or scalar
+    node_size = pd.read_csv(NodalMeasures_file, usecols=['degree'], skipinitialspace=True)['degree'].tolist() #talk to kirstie about what the original *12 +5 did, and whether this should be a list or scalar. translation: Isla, fix this
     
     big_fig, big_ax = plt.subplots(figsize=(15,15))
     big_ax.axis('off')
